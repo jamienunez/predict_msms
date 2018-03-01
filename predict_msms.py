@@ -105,4 +105,3 @@ if __name__ == '__main__':
     process_all(input, output, mp=True)
 
     print('Time taken: %.1f sec' % (time() - t))
-
