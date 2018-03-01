@@ -112,6 +112,6 @@ if __name__ == '__main__':
     t = time()
 
     # Run
-    process_all(args.input, args.output, mp=args.multiprocess, max_proc_per_cpu=args.proc)
+    process_all(args.input, args.output, mp=args.multiprocess, max_proc_per_cpu=int(args.proc))
 
     print('Time taken: %.1f sec' % (time() - t))
