@@ -1,75 +1,82 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Nov 15 10:49:37 2016
-
-@author: nune558
-"""
-
-from subprocess import PIPE, Popen
-import matplotlib.pyplot as plt
+import subprocess
 import pandas as pd
 from time import time
-
-#%% Functions
-def _cmdline(command, mode):
-    process = Popen(
-        args=command,
-        stdout=PIPE,
-        shell=True,
-        cwd = r'C:\Users\MontyPypi\Documents\work-workspace\predict_msms\\' + mode
-    )
-    return process.communicate()[0]
+import multiprocessing as mp
 
 
-def specify_energy(full_result, energy):
-    full_result = full_result.replace('\r', '')
-    lines = full_result.split('\n')
-    start = lines.index('energy' + str(energy)) + 1
-    if energy < 2:
-        stop = lines.index('energy' + str(energy+1))
-    else:
-        stop = len(lines)
-    output = ''
-    for piece in lines[start:stop]:
-        output += piece + '\n'
-    return output.strip()
+def _cmdline(inchi, mode):
+    cmd = ['WINEDEBUG=-all', 'wine', 'cfm-predict.exe', '"%s"' % inchi]
+
+    cmd = ' '.join(cmd)
+
+    res = subprocess.check_output(cmd, shell=True,
+                                   stderr=subprocess.STDOUT,
+                                   cwd=r'./' + mode)
+
+    print('Res: %s' % res)
+    return res
+
+
+def split_energies(result):
+    result = result.replace('\r', '')
+    lines = result.split('\n')
+    start = [0, lines.index('energy1'), lines.index('energy2')]
+    stop = [start[1], start[2], len(lines)]
+
+    l = []
+    for i1, i2 in zip(start, stop):
+        output = ''
+        for piece in lines[i1 + 1: i2]:
+            output += piece + '\n'
+        l.append(output.strip())
+
+    return l
 
 
 # Mode can be positive ('+' or anything starting with 'p') or negative ('-' or 
 # anything starting with 'n')
 def predict(inchi, mode, energy=None):
     if mode == '+' or mode.lower()[0] == 'p':
-        m = 'Positive Mode'
+        m = 'pos_cfm_id'
     elif mode == '-' or mode.lower()[0] == 'n':
-        m = 'Negative Mode'
+        m = 'neg_cfm_id'
     else:
-        print 'Error. Unknown mode \"' + mode + '\".'
+        print('Error. Unknown mode \"' + mode + '\".')
         return None
-    result = _cmdline('cfm-predict.exe ' + inchi, m)
+    result = _cmdline(inchi, m)
     if energy is None:
         return result.strip()
     else:
         return specify_energy(result, energy)
 
 
-def _process_all_sp(inchis):
-    rows = []
-    for inchi in inchis:
+def _process(inchi):
+    # Predict MSMS
+    pos = predict(inchi, '+')
+    neg = predict(inchi, '-')
 
-        # Predict MSMS
-        pos = predict(inchi, '+')
-        neg = predict(inchi, '-')
+    # Process
+    row = [inchi]
+    row.extend(split_energies(pos))
+    row.extend(split_energies(neg))
 
-        # Process
-        row = [inchi]
-        row.extend([specify_energy(pos, x) for x in [0, 1, 2]])
-        row.extend([specify_energy(neg, x) for x in [0, 1, 2]])
-        rows.append(row)
+    return row
 
+
+def _process_all_mp(inchis, max_proc_per_cpu):
+    p = mp.Pool(processes=mp.cpu_count() * max_proc_per_cpu)
+    rows = p.map(_process, inchis)
     return rows
 
 
-def process_all(input, output, mp=False):
+def _process_all_sp(inchis):
+    rows = []
+    for inchi in inchis:
+        rows.append(_process(inchi))
+    return rows
+
+
+def process_all(input, output, mp=False, max_proc_per_cpu=5):
     # Create list of InChIs
     with open(input, 'r') as f:
         inchis = [x.strip() for x in f.readlines()]
@@ -87,14 +94,15 @@ def process_all(input, output, mp=False):
 
     return
 
-#%% DSSTox Predictions
-input = './testing/test_small.txt'
-output = 'properties.csv'
 
-t = time()
+if __name__ == '__main__':
+    input = './testing/test_small.txt'
+    output = 'properties.csv'
 
-# mp=True for multiprocessing
-process_all(input, output, mp=False)
+    t = time()
 
-print('Time taken: %.1f min' % ((time() - t) / 60))
+    # mp=True for multiprocessing
+    process_all(input, output, mp=True)
+
+    print('Time taken: %.1f sec' % (time() - t))
 
