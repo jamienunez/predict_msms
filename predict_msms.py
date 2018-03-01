@@ -2,9 +2,11 @@ import subprocess
 import pandas as pd
 from time import time
 import multiprocessing as mp
+import argparse
 
 
 def _cmdline(inchi, mode):
+#    cmd = ['cfm-predict.exe', '"%s"' % inchi] # For Windows
     cmd = ['WINEDEBUG=-all', 'wine', 'cfm-predict.exe', '"%s"' % inchi]
 
     cmd = ' '.join(cmd)
@@ -12,8 +14,6 @@ def _cmdline(inchi, mode):
     res = subprocess.check_output(cmd, shell=True,
                                    stderr=subprocess.STDOUT,
                                    cwd=r'./' + mode)
-
-    print('Res: %s' % res)
     return res
 
 
@@ -35,7 +35,7 @@ def split_energies(result):
 
 # Mode can be positive ('+' or anything starting with 'p') or negative ('-' or 
 # anything starting with 'n')
-def predict(inchi, mode, energy=None):
+def predict(inchi, mode):
     if mode == '+' or mode.lower()[0] == 'p':
         m = 'pos_cfm_id'
     elif mode == '-' or mode.lower()[0] == 'n':
@@ -44,10 +44,7 @@ def predict(inchi, mode, energy=None):
         print('Error. Unknown mode \"' + mode + '\".')
         return None
     result = _cmdline(inchi, m)
-    if energy is None:
-        return result.strip()
-    else:
-        return specify_energy(result, energy)
+    return result.strip()
 
 
 def _process(inchi):
@@ -85,7 +82,7 @@ def process_all(input, output, mp=False, max_proc_per_cpu=5):
         rows = _process_all_mp(inchis, max_proc_per_cpu)
     else:
         rows = _process_all_sp(inchis)
-    print rows
+
     # Process results
     cols = ['InChI', 'Pos10V', 'Pos20V', 'Pos40V', 'Neg10V', 'Neg20V',
             'Neg40V']
@@ -96,12 +93,25 @@ def process_all(input, output, mp=False, max_proc_per_cpu=5):
 
 
 if __name__ == '__main__':
-    input = './testing/test_small.txt'
-    output = 'properties.csv'
+    
+    # Parse input
+    parser = argparse.ArgumentParser(description='MS/MS Prediction using CFM-ID')
+    parser.add_argument('-i','--input', 
+                        help='Input filename with InChIs on separate lines', 
+                        required=True)
+    parser.add_argument('-o','--output', 
+                        help='Output filename (default=\'properties.csv\'',
+                        required=False, default='properties.csv')
+    parser.add_argument('-m', action='store_true', default=False,
+                    dest='multiprocess',
+                    help='Use multiprocessing')
+    parser.add_argument('-n','--proc', help='Processes per CPU (default=5)',
+                        required=False, default=5)
+    args = parser.parse_args()
 
     t = time()
 
-    # mp=True for multiprocessing
-    process_all(input, output, mp=True)
+    # Run
+    process_all(args.input, args.output, mp=args.multiprocess, max_proc_per_cpu=args.proc)
 
     print('Time taken: %.1f sec' % (time() - t))
